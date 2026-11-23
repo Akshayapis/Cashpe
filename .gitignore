@@ -1,0 +1,5 @@
+.env
+vendor/
+firebase-credentials.json
+*.log
+.DS_Store
