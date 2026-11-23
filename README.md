@@ -172,27 +172,36 @@ Outbound webhook: set **API → Webhook URL** in the dashboard. Events are POSTe
 
 ## Acceptance checklist (from the spec)
 
-- [x] Google login end-to-end (OAuth 2.0, auto-creates account, email_verified=true)
-- [x] Email register + magic link verify (single-use, 15 min)
-- [x] Unverified emails blocked at login + resend verification flow
-- [x] Sidebar with 8 inline SVG icons, zero emojis
-- [x] Business provider (UPI ID) saved to Firestore
-- [x] Personal provider mobile → OTP → UPI list via cURL (env-configurable endpoints)
-- [x] Max 3 providers enforced server-side (+ locked rows)
-- [x] Link creation blocked when wallet < 2% commission (server-side, fresh read)
-- [x] pay.php premium UI, QR via UPI intent, auto-poll every 3s
-- [x] check_status.php detects payment → deducts 2% → saves UTR → webhook + email
-- [x] Wallet page (balance, add funds via admin approval, ledger, low-balance banner < ₹50)
-- [x] Transactions filters + working CSV export + detail modal
-- [x] API create_link returns a working payment_url
-- [x] Webhook fires on success (HMAC-signed, logged in webhook_logs)
-- [x] Support chat works both ways (3s polling, image attachments, base64 → Firestore)
-- [x] Admin panel 7 tabs, all functional
-- [x] Emails via PHPMailer SMTP (magic link, welcome, payment received, low balance)
-- [x] Dockerfile for Render + render.yaml + /ping.php
-- [x] Dark mode toggle (localStorage)
-- [x] Zero emoji / zero TODO / zero mock data (all data from Firestore)
-- [x] CSRF on every form + sanitized inputs + styled error pages
+Verification status honesty key:
+- **Built + statically verified in-repo** = code written, PHP-parsed (php-wasm 8.2), helpers unit-tested, no placeholders — but NOT integration-tested with live services.
+- **Requires deploy-time credentials** = cannot be proven without real Firebase/Google/SMTP/provider access on Render. You must test these after deploying (₹1 test payment).
+
+- [x] Built: register + magic link verify flow (single-use token, 15 min, collection-group query) — deploy-test required
+- [x] Built: Google sign-in (OAuth 2.0 code exchange, auto-creates account, email_verified=true) — deploy-test required
+- [x] Built: unverified emails blocked at login + resend verification flow
+- [x] Built: sidebar with 8 inline SVG icons, zero emojis anywhere (verified by scan)
+- [x] Built: business provider (UPI ID) saved to Firestore, server-side validation
+- [x] Built: personal provider mobile → OTP → UPI list via cURL client — needs `*_PERSONAL_BASE_URL` (not publicly documented); returns clear "not configured" otherwise
+- [x] Built: max 3 providers enforced server-side (+ locked rows)
+- [x] Built: link creation blocked when wallet < 2% commission (server-side, fresh read)
+- [x] Built: pay.php premium UI, QR via UPI intent, auto-poll every 3s (expiry 30 min)
+- [x] Built: check_status.php → deducts 2% → saves UTR → email + webhook (idempotent `payment_finalize`)
+- [x] Built: wallet page (balance, add-funds request with admin approval, ledger, low-balance banner < ₹50)
+- [x] Built: transactions filters + working CSV export + detail modal
+- [x] Built: API create_link / status / wallet / transactions (60 req/min per key, optional IP whitelist, HMAC webhook)
+- [x] Built: support chat both ways (3s polling, image attachments, base64 → Firestore)
+- [x] Built: admin panel 7 tabs (dashboard / users / links / transactions CSV / support / wallet requests / settings)
+- [x] Built: email templates (magic link, welcome, payment received, low balance) via PHPMailer SMTP — needs real SMTP credentials to confirm delivery
+- [x] Built: Dockerfile + render.yaml + /ping.php ("ok") for UptimeRobot — Docker build itself must run on Render (no Docker in this environment)
+- [x] Built: dark mode toggle (localStorage), responsive drawer sidebar
+- [x] Verified: zero emoji (regex scan), zero TODO/mock data, CSRF on all forms + X-CSRF-Token for JSON, e() escaping, styled error pages
+- [ ] Deploy-time: Google login works end-to-end against real Google OAuth client
+- [ ] Deploy-time: emails actually delivered by your SMTP provider
+- [ ] Deploy-time: ₹1 end-to-end payment auto-detected (SMS forwarder or personal provider bridge)
+- [ ] Deploy-time: Docker image builds green on Render and health check passes
+- [ ] Deploy-time: Firebase security rules / indexes deployed as needed
+
+Everything marked "Built" is implemented in this repository; nothing is stubbed or faked. The unchecked items are inherently un-testable without your live credentials and infrastructure.
 
 ## License
 
