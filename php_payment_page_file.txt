@@ -1,0 +1,358 @@
+You are a senior full-stack PHP engineer. Build me a COMPLETE, PRODUCTION-READY,
+FULLY WORKING payment gateway named "CashPe" — no placeholders, no TODOs,
+no mock data, no emoji icons, no bugs. Every file must be complete and runnable
+as-is. Icons must be inline SVG only (Heroicons / Lucide style). Design must be
+premium (glassmorphism + gradients + smooth animations + dark mode toggle).
+
+=========================================================
+PROJECT: CashPe — UPI Payment Gateway
+=========================================================
+Tagline: "Receive Payments. Anytime. Anywhere."
+
+STACK (strict — do not change):
+- Backend: Pure PHP 8.2+ (NO Laravel, NO CI, NO framework)
+- Database: Firebase Firestore (kreait/firebase-php SDK v7)
+- Auth: Google OAuth 2.0 + Email/Password + Magic Link verification
+- Hosting: render.com (Dockerfile + PHP-Apache)
+- Frontend: PHP + TailwindCSS (CDN) + Alpine.js + Vanilla JS
+- Icons: INLINE SVG ONLY (Lucide/Heroicons) — ZERO emojis anywhere in UI
+- Email: PHPMailer + SMTP
+- HTTP: cURL for all provider APIs
+- Sessions: PHP native $_SESSION
+- Security: password_hash, CSRF tokens, input sanitization, .htaccess HTTPS
+
+=========================================================
+🎨 DESIGN RULES (STRICT)
+=========================================================
+- NO emoji anywhere — not in UI, not in code, not in buttons, not in sidebar
+- ALL icons = inline SVG (stroke-width 1.5–2, currentColor)
+- Sidebar icons: Home, Wallet, Link, CreditCard, List, Key, Headset, LogOut
+- Premium look: glassmorphism cards, soft shadows, gradient accents
+  (indigo → violet → fuchsia), rounded-2xl, backdrop-blur
+- Fonts: Inter (Google Fonts)
+- Dark mode toggle (localStorage + class="dark" on <html>)
+- Smooth transitions (150–250ms ease)
+- Fully responsive (mobile-first, sidebar collapses to drawer)
+- Payment page must look like a fintech app (Razorpay/Stripe level polish)
+- Loading states + toast notifications (custom SVG icons, no emoji)
+- Empty states with SVG illustrations
+- Error pages styled, not raw PHP errors
+
+=========================================================
+📁 FILE STRUCTURE (output every file in full)
+=========================================================
+cashpe/
+├── Dockerfile
+├── composer.json
+├── render.yaml
+├── .htaccess
+├── .env.example
+├── config/
+│   ├── config.php
+│   └── firebase.php
+├── includes/
+│   ├── auth.php
+│   ├── csrf.php
+│   ├── firebase_helper.php
+│   ├── wallet_helper.php
+│   ├── provider_helper.php
+│   ├── mailer.php
+│   ├── icons.php          (PHP function returning inline SVG by name)
+│   ├── sidebar.php
+│   ├── header.php
+│   └── footer.php
+├── public/
+│   ├── index.php          (landing + login)
+│   ├── register.php
+│   ├── verify.php         (magic link handler)
+│   ├── dashboard.php
+│   ├── wallet.php
+│   ├── payment-link.php
+│   ├── connect.php        (provider setup)
+│   ├── provider-otp.php   (OTP screen for personal providers)
+│   ├── transactions.php
+│   ├── api.php            (API keys + docs + webhook)
+│   ├── support.php
+│   ├── pay.php            (public premium payment page)
+│   ├── check_status.php   (AJAX polling endpoint)
+│   ├── callback.php       (provider OTP + status callback)
+│   ├── webhook_send.php
+│   ├── admin.php          (SINGLE FILE — 7 tabs)
+│   ├── ping.php           (keep-alive for UptimeRobot)
+│   └── logout.php
+└── assets/
+    ├── css/app.css
+    └── js/app.js
+
+=========================================================
+1️⃣ AUTHENTICATION
+=========================================================
+register.php:
+- "Continue with Google" (OAuth 2.0) + "Register with Email"
+- Fields: name, email, password (min 8 chars, 1 number, 1 letter)
+- On signup:
+  * create Firestore doc users/{uid}
+  * generate UUID magic_token, save users/{uid}/tokens/{token}
+  * expires in 15 min, single-use
+  * send branded HTML email (SVG logo, gradient CTA button)
+  * link: https://cashpe.onrender.com/verify.php?token=XXXX
+- After verify: email_verified=true → redirect dashboard
+
+Firestore users/{uid}:
+{
+  uid, name, email, password_hash, google_id:null,
+  email_verified:false, wallet_balance:0, api_key:"cp_live_...",
+  role:"user", created_at
+}
+
+Login rules:
+- Block if email_verified=false → show "Resend verification" (SVG icon)
+- Google login also creates user if not exists (email_verified=true auto)
+
+=========================================================
+2️⃣ SIDEBAR (SVG icons only)
+=========================================================
+Home (dashboard) | Wallet | Payment Link | Connect Provider |
+Transactions | API | Support | Logout
+- Active state: gradient pill background
+- Collapsed on mobile → hamburger drawer
+- User avatar (initials) + name + email at bottom
+
+=========================================================
+3️⃣ CONNECT PROVIDER (most critical)
+=========================================================
+connect.php — layout top→bottom:
+[ Top ] "Select Provider" heading
+[ Provider list ] — each row: SVG logo + name + tag
+  Business providers:
+    - PhonePe Business
+    - Paytm Business
+    - Google Pay Business
+    - BharatPe
+  Personal providers (BELOW business, no "Business" tag, clearly separated):
+    - PhonePe Personal
+    - Paytm Personal
+    - Navi
+  ↓
+Case A — Business provider selected:
+  → input UPI ID / VPA → Save
+  → Firestore users/{uid}/providers/{id}:
+    { provider, upi_id, type:"business", status:"active", created_at }
+
+Case B — Personal provider selected (Navi / PhonePe Personal / Paytm Personal):
+  → input mobile number → Next
+  → PHP cURL calls provider login endpoint
+  → provider sends OTP → user enters OTP on provider-otp.php
+  → PHP callback.php POSTs OTP → provider returns session_token + upi_ids[]
+  → show dropdown "Select UPI ID to receive payments" → Save:
+    { provider, mobile, session_token (AES-256 encrypted),
+      upi_ids:[...], selected_upi, type:"personal",
+      status:"active", created_at }
+  → also fetch & display provider payment history (last 10)
+
+Rules:
+- MAX 3 providers per user (enforce server-side, show SVG-locked rows after 3)
+- Delete provider button with confirm modal (SVG icons)
+- Regenerate session on every OTP login
+- All cURL calls: 30s timeout, verify SSL, proper error handling
+
+=========================================================
+4️⃣ PAYMENT LINK + WALLET (2% commission)
+=========================================================
+payment-link.php:
+- Form: amount, customer_name, customer_email (opt), customer_phone (opt),
+  note, provider dropdown (only user's connected providers, max 3)
+- Server-side check BEFORE generating:
+    commission = amount * 0.02
+    if (user.wallet_balance < commission) → block + toast "Insufficient balance"
+- On success → Firestore payment_links/{id}:
+  { link_id:"pl_...", uid, amount, commission, customer_name,
+    customer_email, customer_phone, note, provider_id, upi_id,
+    status:"pending", utr:null, created_at }
+- Show link + Copy button + "Share on WhatsApp" (SVG icons)
+- Links table below: all user's links with status badges
+
+pay.php (public — PREMIUM UI):
+- Glassmorphism card, gradient bg, Inter font
+- CashPe logo (inline SVG), amount in 48px bold, merchant name
+- QR code from: upi://pay?pa=UPI_ID&pn=Merchant&am=Amount&cu=INR
+- "Open UPI App" deep-link button (SVG)
+- AUTO-POLL every 3s → fetch('check_status.php?id=pl_xxx')
+- On success → ✅ checkmark SVG animation + "Payment Successful" + UTR
+- Failed → SVG X + retry
+- Expired after 30 min → "Link expired" state
+
+check_status.php:
+- Load link → get provider + session_token
+- cURL provider transaction API
+- Match amount + UPI ID + timestamp within last 30 min
+- If match:
+    status = "success", utr = provider_utr
+    wallet_balance -= commission  (deduct 2%)
+    write wallet_transactions doc
+    fire webhook_send.php (async)
+- Return JSON { status, utr }
+
+wallet.php:
+- Big gradient balance card (₹ icon SVG)
+- "Add Funds" → creates wallet_request doc (admin approves)
+- Table: Date | Type | Amount | Description | Balance
+- Warn banner if balance < ₹50
+
+=========================================================
+5️⃣ TRANSACTIONS
+=========================================================
+- Table: Link ID | Amount | Customer | Provider | UPI ID | Status | UTR | Date
+- Filters: date range, status, provider
+- CSV export (working download)
+- Row click → detail modal (SVG close icon)
+
+=========================================================
+6️⃣ API SYSTEM
+=========================================================
+api.php:
+- Show user's API key (cp_live_xxx) + Regenerate + Copy (SVG icons)
+- Tabbed docs (PHP / Node.js / cURL / Python)
+- Webhook URL field (saved to Firestore)
+- Endpoints:
+  POST ?action=create_link  (X-API-Key header) → { payment_url, link_id }
+  GET  ?action=status&id=   → { status, utr, amount }
+  GET  ?action=wallet       → { balance }
+  GET  ?action=transactions → [ ... ]
+- Rate limit: 60 req/min per key (firestore counter)
+- IP whitelist optional (firestore ip_whitelist[])
+
+=========================================================
+7️⃣ SUPPORT CHAT
+=========================================================
+User (support.php):
+- WhatsApp-style chat UI (SVG send/attach/icons, no emoji)
+- Text + image upload (base64 → Firestore or Firebase Storage)
+- Messages in support_chats/{chat_id}/messages
+
+Admin (admin.php → Support tab):
+- List users with unread badge (SVG bell)
+- Show: user name + email + last message + unread count
+- Click → chat thread → admin replies → saved same doc
+- Polling every 3s OR Firestore realtime listener
+
+=========================================================
+8️⃣ ADMIN PANEL (admin.php — SINGLE FILE)
+=========================================================
+Login: email + password from .env (session-guarded)
+Tabs via ?tab= :
+1. Dashboard — stats cards (users, volume, commission, active links)
+                + mini SVG line chart (last 7 days)
+2. Users — search, view, credit/debit wallet, block/unblock
+3. Payment Links — all links, filter, status
+4. Transactions — global list + CSV export
+5. Support Chats — chat inbox (as above)
+6. Wallet Requests — approve/reject (updates balance + log)
+7. Settings — commission %, SMTP, provider API keys
+
+Design: same premium theme, SVG icons, dark mode
+
+=========================================================
+9️⃣ EMAIL SYSTEM
+=========================================================
+PHPMailer + SMTP:
+1. Magic Link verification
+2. Welcome email
+3. Payment received notification
+4. Low wallet balance alert
+- Branded HTML template (inline SVG logo, gradient button, footer)
+- No emojis. All icons as inline SVG data-URIs.
+
+=========================================================
+🔟 DEPLOYMENT (render.com)
+=========================================================
+Dockerfile:
+  FROM php:8.2-apache
+  RUN apt-get update && apt-get install -y libzip-dev libcurl4-openssl-dev \
+      unzip && docker-php-ext-install zip curl
+  RUN a2enmod rewrite
+  COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+  WORKDIR /var/www/html
+  COPY . .
+  RUN composer install --no-dev --optimize-autoloader
+  RUN chown -R www-data:www-data /var/www/html
+  EXPOSE 80
+
+render.yaml:
+  services:
+    - type: web
+      name: cashpe
+      env: docker
+      plan: free
+      healthCheckPath: /ping.php
+      envVars:
+        - key: FIREBASE_CREDENTIALS_JSON
+          sync: false
+        - key: GOOGLE_CLIENT_ID
+          sync: false
+        - key: GOOGLE_CLIENT_SECRET
+          sync: false
+        - key: SMTP_HOST
+          sync: false
+        - key: SMTP_USER
+          sync: false
+        - key: SMTP_PASS
+          sync: false
+        - key: ADMIN_EMAIL
+          sync: false
+        - key: ADMIN_PASSWORD
+          sync: false
+        - key: COMMISSION_PERCENT
+          value: "2"
+
+.htaccess:
+  - Force HTTPS
+  - Rewrite all to public/ (or keep public as root)
+  - Deny .env, config/, includes/
+  - Security headers (X-Frame-Options, X-Content-Type-Options, etc.)
+
+ping.php:
+  header('Content-Type: text/plain'); echo "ok";
+
+=========================================================
+✅ ACCEPTANCE CHECKLIST (all must pass)
+=========================================================
+[ ] Google login works end-to-end
+[ ] Email register + magic link verify works
+[ ] Unverified email blocked at login
+[ ] Sidebar renders with 8 inline SVG icons, NO emoji
+[ ] Connect provider: business (UPI ID) saved to Firestore
+[ ] Connect provider: personal (mobile → OTP → UPI list) works via cURL
+[ ] Max 3 providers enforced server-side
+[ ] Payment link generated only if wallet_balance >= 2% of amount
+[ ] pay.php shows premium UI with QR + auto-poll every 3s
+[ ] check_status.php detects payment, deducts 2%, saves UTR
+[ ] Wallet page shows balance + transaction history
+[ ] Transactions page filters + CSV export works
+[ ] API create_link returns working payment_url
+[ ] Webhook fires on success
+[ ] Support chat works both ways (user ↔ admin)
+[ ] Admin panel 7 tabs all functional
+[ ] Emails deliver via SMTP (magic link + welcome)
+[ ] Dockerfile builds on render.com
+[ ] ping.php returns "ok" for UptimeRobot
+[ ] Dark mode toggle works
+[ ] Zero emoji anywhere in UI (verify all files)
+[ ] Zero TODO / mock / fake data
+[ ] All forms have CSRF tokens
+[ ] All inputs sanitized
+[ ] Errors handled gracefully (no raw stack traces in UI)
+
+=========================================================
+⚠️ OUTPUT FORMAT (STRICT)
+=========================================================
+- Output EVERY file separately with full code (no "..." truncation)
+- Start each file with its path as heading: ### FILE: public/dashboard.php
+- Include composer.json with exact dependencies
+- Include .env.example with all variables
+- Include README.md with step-by-step deploy on render.com
+- No emoji anywhere
+- All icons inline SVG
+- Every PHP file must run without errors
+
+BEGIN BUILD.
